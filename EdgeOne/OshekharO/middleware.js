@@ -968,11 +968,15 @@ var config = {
   domains: {
     custom: {
       main: "goindex.eu.org",
-      subdomains: ["www", "speedy", "search", "images", "static", "cdn"]
+      subdomains: ["www"]
     },
     target: {
-      main: "literotica.com",
-      subdomains: ["www", "speedy", "search", "images", "static", "cdn"]
+      // [EO] 测试站点：Hacker News（原 literotica.com，换站只动这里和 replace_dict）
+      main: "news.ycombinator.com",
+      // 目标站是否有 www 子域：HN 没有 www.news.ycombinator.com，
+      // 映射生成时按此开关决定是否给主域加前缀
+      use_www: false,
+      subdomains: []
     }
   },
   blocked_region: ["CU"],
@@ -980,8 +984,7 @@ var config = {
   https: true,
   disable_cache: false,
   replace_dict: {
-    "literotica.com": "goindex.eu.org",
-    "Premium": ""
+    "news.ycombinator.com": "goindex.eu.org"
   },
   security_headers: {
     "X-Content-Type-Options": "nosniff",
@@ -991,10 +994,15 @@ var config = {
   },
   injection_script: ""
 };
+function targetMain() {
+  const { main, use_www } = config.domains.target;
+  return use_www ? `www.${main}` : main;
+}
 function generateDomainMappings() {
   const mappings = {};
-  mappings[config.domains.custom.main] = `www.${config.domains.target.main}`;
-  mappings[`www.${config.domains.custom.main}`] = `www.${config.domains.target.main}`;
+  const targetMainHost = targetMain();
+  mappings[config.domains.custom.main] = targetMainHost;
+  mappings[`www.${config.domains.custom.main}`] = targetMainHost;
   config.domains.custom.subdomains.forEach((subdomain) => {
     if (subdomain !== "www") {
       mappings[`${subdomain}.${config.domains.custom.main}`] = `${subdomain}.${config.domains.target.main}`;
@@ -1004,8 +1012,9 @@ function generateDomainMappings() {
 }
 function generateReverseMappings() {
   const reverse = {};
-  reverse[config.domains.target.main] = config.domains.custom.main;
-  reverse[`www.${config.domains.target.main}`] = `www.${config.domains.custom.main}`;
+  const targetMainHost = targetMain();
+  reverse[targetMainHost] = config.domains.custom.main;
+  reverse[`www.${targetMainHost}`] = `www.${config.domains.custom.main}`;
   config.domains.target.subdomains.forEach((subdomain) => {
     if (subdomain !== "www") {
       reverse[`${subdomain}.${config.domains.target.main}`] = `${subdomain}.${config.domains.custom.main}`;
@@ -1160,8 +1169,8 @@ var TextRewriter = class {
   }
 };
 function isTargetDomain(hostname) {
-  const targetMain = config.domains.target.main;
-  return hostname === targetMain || hostname.endsWith("." + targetMain);
+  const targetMain2 = config.domains.target.main;
+  return hostname === targetMain2 || hostname.endsWith("." + targetMain2);
 }
 function rewriteUrl(url, incomingHost) {
   if (!url) return url;

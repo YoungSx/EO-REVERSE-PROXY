@@ -18,11 +18,15 @@ const config = {
   domains: {
     custom: {
       main: 'goindex.eu.org',
-      subdomains: ['www', 'speedy', 'search', 'images', 'static', 'cdn']
+      subdomains: ['www']
     },
     target: {
-      main: 'literotica.com',
-      subdomains: ['www', 'speedy', 'search', 'images', 'static', 'cdn']
+      // [EO] 测试站点：Hacker News（原 literotica.com，换站只动这里和 replace_dict）
+      main: 'news.ycombinator.com',
+      // 目标站是否有 www 子域：HN 没有 www.news.ycombinator.com，
+      // 映射生成时按此开关决定是否给主域加前缀
+      use_www: false,
+      subdomains: []
     }
   },
   blocked_region: ['CU'],
@@ -30,8 +34,7 @@ const config = {
   https: true,
   disable_cache: false,
   replace_dict: {
-    'literotica.com': 'goindex.eu.org',
-    'Premium': ''
+    'news.ycombinator.com': 'goindex.eu.org'
   },
   security_headers: {
     'X-Content-Type-Options': 'nosniff',
@@ -43,17 +46,26 @@ const config = {
 };
 
 // Domain Mappings
+// [EO] 目标站主域是否带 www 前缀由 config.domains.target.use_www 决定，
+// 不再硬编码（HN 没有 www 子域，literotica 有）。
+function targetMain() {
+  const { main, use_www } = config.domains.target;
+  return use_www ? `www.${main}` : main;
+}
+
 function generateDomainMappings() {
   const mappings = {};
+  const targetMainHost = targetMain();
 
-  // Handle both with and without www for custom domains
-  mappings[config.domains.custom.main] = `www.${config.domains.target.main}`;
-  mappings[`www.${config.domains.custom.main}`] = `www.${config.domains.target.main}`;
+  // Custom main -> target main（custom 侧保留裸域与 www 两种入口）
+  mappings[config.domains.custom.main] = targetMainHost;
+  mappings[`www.${config.domains.custom.main}`] = targetMainHost;
 
-  // Subdomains
+  // Subdomains：同名一一对应（custom sub -> target 同名 sub）
   config.domains.custom.subdomains.forEach(subdomain => {
     if (subdomain !== 'www') {
-      mappings[`${subdomain}.${config.domains.custom.main}`] = `${subdomain}.${config.domains.target.main}`;
+      mappings[`${subdomain}.${config.domains.custom.main}`] =
+        `${subdomain}.${config.domains.target.main}`;
     }
   });
 
@@ -62,18 +74,17 @@ function generateDomainMappings() {
 
 function generateReverseMappings() {
   const reverse = {};
+  const targetMainHost = targetMain();
 
-  // Handle all possible target domain combinations
-  // Without www
-  reverse[config.domains.target.main] = config.domains.custom.main;
-
-  // With www
-  reverse[`www.${config.domains.target.main}`] = `www.${config.domains.custom.main}`;
+  // Target main -> custom main（裸域与 www 双入口都映射回 custom 主域）
+  reverse[targetMainHost] = config.domains.custom.main;
+  reverse[`www.${targetMainHost}`] = `www.${config.domains.custom.main}`;
 
   // Subdomains
   config.domains.target.subdomains.forEach(subdomain => {
     if (subdomain !== 'www') {
-      reverse[`${subdomain}.${config.domains.target.main}`] = `${subdomain}.${config.domains.custom.main}`;
+      reverse[`${subdomain}.${config.domains.target.main}`] =
+        `${subdomain}.${config.domains.custom.main}`;
     }
   });
 
