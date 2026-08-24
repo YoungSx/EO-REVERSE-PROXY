@@ -22,7 +22,7 @@ import './htmlrewriter.js';
 // 中国大陆网络一律返回 401（平台合规闸门，"不含中国大陆"区域下连预览 token 都
 // 不豁免）。自有域名 + "全球可用区（不含中国大陆）"则无需备案与实名。
 // 换域名只改这一处。
-const PUBLIC_HOST = 'hn.salmon.kdns.fr';
+const PUBLIC_HOST = 'proxy.salmon.kdns.fr';
 
 const config = {
   domains: {

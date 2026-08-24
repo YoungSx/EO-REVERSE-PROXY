@@ -990,7 +990,7 @@ if (!("HTMLRewriter" in globalThis)) {
 }
 
 // src/index.js
-var PUBLIC_HOST = "hn.salmon.kdns.fr";
+var PUBLIC_HOST = "proxy.salmon.kdns.fr";
 var config = {
   domains: {
     custom: {
