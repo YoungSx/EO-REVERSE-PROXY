@@ -16,9 +16,13 @@ import './htmlrewriter.js';
 
 // [EO] 对外访问域名：既是 custom 主域（入口 Host 映射），也是 HTML 内域名替换的目标。
 // 原上游填的是脚本作者自己的 goindex.eu.org（解析到 Cloudflare，与本部署无关），
-// 会把页面里所有链接改写到第三方站点。这里改为本部署实际对外的域名。
-// 绑定自定义域名后只改这一处。
-const PUBLIC_HOST = 'eo-reverse-proxy.edgeone.cool';
+// 会把页面里所有链接改写到第三方站点。
+//
+// 必须用自有域名而非平台预设域名（*.edgeone.cool / *.edgeone.dev）：预设域名在
+// 中国大陆网络一律返回 401（平台合规闸门，"不含中国大陆"区域下连预览 token 都
+// 不豁免）。自有域名 + "全球可用区（不含中国大陆）"则无需备案与实名。
+// 换域名只改这一处。
+const PUBLIC_HOST = 'hn.salmon.kdns.fr';
 
 const config = {
   domains: {

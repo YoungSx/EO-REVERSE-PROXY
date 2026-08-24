@@ -990,7 +990,7 @@ if (!("HTMLRewriter" in globalThis)) {
 }
 
 // src/index.js
-var PUBLIC_HOST = "eo-reverse-proxy.edgeone.cool";
+var PUBLIC_HOST = "hn.salmon.kdns.fr";
 var config = {
   domains: {
     custom: {
