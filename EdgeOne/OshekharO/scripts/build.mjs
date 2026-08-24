@@ -50,6 +50,11 @@ const entries = [
     entry: join(root, "src/middleware.js"),
     outfile: join(root, "middleware.js"),
   },
+  {
+    // 诊断入口：具名路由优先于 catch-all，不含 WASM，产物仅几 KB。
+    entry: join(root, "src/diag.js"),
+    outfile: join(root, "functions/__diag.js"),
+  },
 ];
 
 for (const { entry, outfile } of entries) {

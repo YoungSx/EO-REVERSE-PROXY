@@ -14,10 +14,16 @@
 // [EO] 引入 HTMLRewriter 垫片：把 HTMLRewriter 挂到 globalThis，下方代码无需感知
 import './htmlrewriter.js';
 
+// [EO] 对外访问域名：既是 custom 主域（入口 Host 映射），也是 HTML 内域名替换的目标。
+// 原上游填的是脚本作者自己的 goindex.eu.org（解析到 Cloudflare，与本部署无关），
+// 会把页面里所有链接改写到第三方站点。这里改为本部署实际对外的域名。
+// 绑定自定义域名后只改这一处。
+const PUBLIC_HOST = 'eo-reverse-proxy.edgeone.cool';
+
 const config = {
   domains: {
     custom: {
-      main: 'goindex.eu.org',
+      main: PUBLIC_HOST,
       subdomains: ['www']
     },
     target: {
@@ -34,7 +40,7 @@ const config = {
   https: true,
   disable_cache: false,
   replace_dict: {
-    'news.ycombinator.com': 'goindex.eu.org'
+    'news.ycombinator.com': PUBLIC_HOST
   },
   security_headers: {
     'X-Content-Type-Options': 'nosniff',

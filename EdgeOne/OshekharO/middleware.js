@@ -990,10 +990,11 @@ if (!("HTMLRewriter" in globalThis)) {
 }
 
 // src/index.js
+var PUBLIC_HOST = "eo-reverse-proxy.edgeone.cool";
 var config = {
   domains: {
     custom: {
-      main: "goindex.eu.org",
+      main: PUBLIC_HOST,
       subdomains: ["www"]
     },
     target: {
@@ -1010,7 +1011,7 @@ var config = {
   https: true,
   disable_cache: false,
   replace_dict: {
-    "news.ycombinator.com": "goindex.eu.org"
+    "news.ycombinator.com": PUBLIC_HOST
   },
   security_headers: {
     "X-Content-Type-Options": "nosniff",
