@@ -18,11 +18,12 @@ import './htmlrewriter.js';
 // 原上游填的是脚本作者自己的 goindex.eu.org（解析到 Cloudflare，与本部署无关），
 // 会把页面里所有链接改写到第三方站点。
 //
-// 必须用自有域名而非平台预设域名（*.edgeone.cool / *.edgeone.dev）：预设域名在
-// 中国大陆网络一律返回 401（平台合规闸门，"不含中国大陆"区域下连预览 token 都
-// 不豁免）。自有域名 + "全球可用区（不含中国大陆）"则无需备案与实名。
-// 换域名只改这一处。
-const PUBLIC_HOST = 'proxy.salmon.kdns.fr';
+// 当前用平台预设域名 relay.edgeone.dev（项目名即子域名）。代价：预设域名在
+// 中国大陆网络一律返回 401（平台合规闸门，"不含中国大陆"区域下连预览 token
+// 都不豁免），因此本站目前仅境外可直连。
+// 若要让大陆直连，改为自有域名并在控制台绑定即可（"不含中国大陆"区域下绑
+// 自有域名无需备案与实名）。换域名只改这一处。
+const PUBLIC_HOST = 'relay.edgeone.dev';
 
 const config = {
   domains: {
