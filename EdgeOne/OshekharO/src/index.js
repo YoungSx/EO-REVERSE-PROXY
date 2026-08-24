@@ -271,27 +271,22 @@ class MetaRewriter {
 // HTMLRewriter Text Handler for rewriting text content
 //
 // [EO] 与 CF 原生的差异：lol-html（wasm）按 1024 字节切分长文本节点，
-// 一个 <script>/<style> 会触发多次 text() 回调，且只有最后一次
-// lastInTextNode === true。CF 原版在 lastInTextNode 时对【当前 chunk】调
-// replace() —— 在 CF 上当前 chunk 就是整个文本节点，语义正确；在这里当前
-// chunk 只是末尾空段，replace 只会追加、原文保留。
-// 因此改为：非末尾 chunk 先 remove()（内容已入 buffer），末尾 chunk 用
-// replace() 输出整段 buffer 的改写结果。token 只在回调内有效，所以
-// remove/replace 必须各自同步执行。
+// 一个 <script>/<style> 会触发多次 text() 回调。实测分块规律：内容全部
+// 落在非末尾块（各 ≤1024B），lastInTextNode === true 的末尾块恒为 0 字节
+// 空段 —— 对它 replace 无效（输出为空），CF 原版「攒到末尾再 replace」的
+// 写法在这里等于丢弃全文。
+// 因此改为：每个非末尾块就地 replace（改写只依赖本块文本，无跨块状态，
+// 域名替换天然不会跨 1KB 边界漏配）；0 字节末尾块不调用任何方法直接跳过。
 class TextRewriter {
   constructor(incomingHost) {
     this.incomingHost = incomingHost;
-    this.buffer = '';
   }
 
   text(text) {
-    this.buffer += text.text;
-    if (text.lastInTextNode) {
-      const rewritten = rewriteTextContent(this.buffer, this.incomingHost);
+    if (text.lastInTextNode && text.text.length === 0) return;
+    const rewritten = rewriteTextContent(text.text, this.incomingHost);
+    if (rewritten !== text.text) {
       text.replace(rewritten);
-      this.buffer = '';
-    } else {
-      text.remove();
     }
   }
 }

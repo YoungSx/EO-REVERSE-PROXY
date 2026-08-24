@@ -912,30 +912,56 @@ var HTMLRewriter3 = class {
     const elementHandlers = this.#elementHandlers;
     const documentHandlers = this.#documentHandlers;
     let rewriter = null;
+    let initErr = null;
+    const queueIn = [];
+    let currentController = null;
     const ts = new TransformStream({
-      async start(controller) {
-        await wasmReady;
-        rewriter = new HTMLRewriter2(
-          (chunk) => {
-            if (chunk.length !== 0) controller.enqueue(chunk);
-          },
-          { enableEsiTags: false }
-        );
-        for (const [selector, handlers] of elementHandlers) {
-          rewriter.on(selector, handlers);
+      transform(chunk, controller) {
+        if (initErr) throw initErr;
+        const bytes = toUint8Array(chunk);
+        if (!rewriter) {
+          queueIn.push(bytes);
+          return;
         }
-        for (const handlers of documentHandlers) {
-          rewriter.onDocument(handlers);
+        currentController = controller;
+        try {
+          rewriter.write(bytes);
+        } finally {
+          currentController = null;
         }
       },
-      transform(chunk) {
-        rewriter.write(toUint8Array(chunk));
-      },
-      flush() {
-        rewriter.end();
-        rewriter.free();
-        rewriter = null;
+      async flush(controller) {
+        await ready;
+        if (initErr) throw initErr;
+        currentController = controller;
+        try {
+          for (const buffered of queueIn) rewriter.write(buffered);
+          queueIn.length = 0;
+          rewriter.end();
+        } finally {
+          currentController = null;
+          rewriter.free();
+          rewriter = null;
+        }
       }
+    });
+    const ready = wasmReady.then(() => {
+      rewriter = new HTMLRewriter2(
+        (chunk) => {
+          if (chunk.length !== 0 && currentController) {
+            currentController.enqueue(chunk);
+          }
+        },
+        { enableEsiTags: false }
+      );
+      for (const [selector, handlers] of elementHandlers) {
+        rewriter.on(selector, handlers);
+      }
+      for (const handlers of documentHandlers) {
+        rewriter.onDocument(handlers);
+      }
+    }, (err) => {
+      initErr = err;
     });
     const res = new Response(body.pipeThrough(ts), response);
     res.headers.delete("Content-Length");
@@ -1155,16 +1181,12 @@ var MetaRewriter = class {
 var TextRewriter = class {
   constructor(incomingHost) {
     this.incomingHost = incomingHost;
-    this.buffer = "";
   }
   text(text) {
-    this.buffer += text.text;
-    if (text.lastInTextNode) {
-      const rewritten = rewriteTextContent(this.buffer, this.incomingHost);
+    if (text.lastInTextNode && text.text.length === 0) return;
+    const rewritten = rewriteTextContent(text.text, this.incomingHost);
+    if (rewritten !== text.text) {
       text.replace(rewritten);
-      this.buffer = "";
-    } else {
-      text.remove();
     }
   }
 };

@@ -50,33 +50,73 @@ export class HTMLRewriter {
     const elementHandlers = this.#elementHandlers;
     const documentHandlers = this.#documentHandlers;
     let rewriter = null;
+    let initErr = null;
+
+    // ── 时序与出口的两个坑 ──────────────────────────────────────────
+    // 坑一（时序）：不用 async start() 做初始化。WHATWG 规范保证 transform
+    // 在 start 完成后才被调用，但 EdgeOne 运行时不保证（实测首块数据可能
+    // 先于 rewriter 构造到达）。就绪前的上游块先排队。
+    //
+    // 坑二（出口）：wasm 输出必须经 transform/flush 回调自带的 controller
+    // 发出。不能用 pull 钩子抓 readable.controller 引用再从外面 enqueue
+    // —— pipeThrough 场景下那样写整条流静默无输出（Node 实测复现）。
+    // 而 lol-html 的输出恰好只在 write()/end() 同步调用栈内产生，这两处
+    // 都能拿到回调自带的 controller，所以天然满足。
+    const queueIn = []; // 上游已到、wasm 还没吃的块
+
+    // wasm 输出桥：lol-html 只在 write()/end() 的同步调用栈内吐数据，
+    // 把当时的 controller 挂到闭包变量，输出回调据此 enqueue。
+    // 见上方「坑二」。
+    let currentController = null;
 
     const ts = new TransformStream({
-      async start(controller) {
-        await wasmReady;
-        rewriter = new LolHtmlRewriter(
-          (chunk) => {
-            // enqueue 空 chunk 会抛。
-            if (chunk.length !== 0) controller.enqueue(chunk);
-          },
-          { enableEsiTags: false }
-        );
-        for (const [selector, handlers] of elementHandlers) {
-          rewriter.on(selector, handlers);
+      transform(chunk, controller) {
+        if (initErr) throw initErr;
+        const bytes = toUint8Array(chunk);
+        if (!rewriter) {
+          queueIn.push(bytes);
+          return;
         }
-        for (const handlers of documentHandlers) {
-          rewriter.onDocument(handlers);
+        currentController = controller;
+        try {
+          rewriter.write(bytes);
+        } finally {
+          currentController = null;
         }
       },
-      transform(chunk) {
-        rewriter.write(toUint8Array(chunk));
-      },
-      flush() {
-        rewriter.end();
-        rewriter.free();
-        rewriter = null;
+      async flush(controller) {
+        await ready;
+        if (initErr) throw initErr;
+        currentController = controller;
+        try {
+          for (const buffered of queueIn) rewriter.write(buffered);
+          queueIn.length = 0;
+          rewriter.end();
+        } finally {
+          currentController = null;
+          rewriter.free();
+          rewriter = null;
+        }
       },
     });
+
+    const ready = wasmReady.then(() => {
+      rewriter = new LolHtmlRewriter(
+        (chunk) => {
+          // 空 chunk enqueue 会抛。
+          if (chunk.length !== 0 && currentController) {
+            currentController.enqueue(chunk);
+          }
+        },
+        { enableEsiTags: false }
+      );
+      for (const [selector, handlers] of elementHandlers) {
+        rewriter.on(selector, handlers);
+      }
+      for (const handlers of documentHandlers) {
+        rewriter.onDocument(handlers);
+      }
+    }, (err) => { initErr = err; });
 
     const res = new Response(body.pipeThrough(ts), response);
     // 改写后长度必然变化，留着旧值会让客户端截断。
