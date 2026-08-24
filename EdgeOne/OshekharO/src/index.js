@@ -420,6 +420,19 @@ function createHTMLRewriter(incomingHost) {
     .on('style', new TextRewriter(incomingHost));
 }
 
+// [EO] 判定「必须逐块下发、不能缓冲」的响应类型。
+// 依据是传输语义而非文本/二进制之分：这些格式的价值在于「边产边发」，
+// 一旦缓冲，语义就被破坏。
+function isStreamingContentType(contentType) {
+  const ct = contentType.toLowerCase();
+  return (
+    ct.includes('text/event-stream') ||   // SSE：OpenAI / Claude / Gemini 流式对话
+    ct.includes('application/x-ndjson') ||// NDJSON：Ollama 等逐行 JSON 流
+    ct.includes('application/stream+json') ||
+    ct.includes('multipart/x-mixed-replace')
+  );
+}
+
 async function processResponse(originalResponse, targetDomain, incomingHost) {
   const headers = new Headers(originalResponse.headers);
 
@@ -474,6 +487,24 @@ async function processResponse(originalResponse, targetDomain, incomingHost) {
   }
 
   const contentType = headers.get('content-type') || '';
+
+  // [EO] 流式协议直通，必须排在下方文本分支之前。
+  //
+  // 为什么需要：SSE 的 Content-Type 是 text/event-stream，含 "text/"，
+  // 会命中下方 `contentType.includes('text/')` 的全缓冲分支
+  // （await originalResponse.text()）—— 那会一直读到上游关闭连接才输出，
+  // LLM 对话的逐字效果彻底消失，长回答还会撞上平台函数执行上限。
+  //
+  // 直通即不改写域名。对 SSE/NDJSON 而言这是正确取舍：其载荷是
+  // 逐帧下发的 JSON 片段，按块做正则替换本就不可靠（关键词会被切断），
+  // 而这类接口返回的是模型文本而非站内链接，无改写需求。
+  if (isStreamingContentType(contentType)) {
+    return new Response(originalResponse.body, {
+      status: originalResponse.status,
+      statusText: originalResponse.statusText,
+      headers
+    });
+  }
 
   // Use HTMLRewriter for HTML content (streaming, more efficient)
   if (contentType.includes('text/html')) {
