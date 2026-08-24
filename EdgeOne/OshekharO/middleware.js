@@ -1082,7 +1082,7 @@ async function fetchAndApply(request) {
     }
     const url = new URL(request.url);
     const incomingHost = url.hostname;
-    const targetDomain = domain_map[incomingHost] || `www.${config.domains.target.main}`;
+    const targetDomain = domain_map[incomingHost] || targetMain();
     if (incomingHost === targetDomain) {
       return new Response("Loop detected", { status: 508 });
     }

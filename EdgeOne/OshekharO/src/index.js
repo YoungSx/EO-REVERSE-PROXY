@@ -139,7 +139,10 @@ async function fetchAndApply(request) {
 
     const url = new URL(request.url);
     const incomingHost = url.hostname;
-    const targetDomain = domain_map[incomingHost] || `www.${config.domains.target.main}`;
+    // [EO] fallback 走 targetMain()，不硬编码 www. —— 部署域（*.edgeone.cool、
+    // 预览域）不在 domain_map 里，会落到这里。目标站若无 www 子域（如 HN），
+    // 硬编码的 www.<main> 解析不出来，fetch 会一直挂到 15s 超时 → 平台 504。
+    const targetDomain = domain_map[incomingHost] || targetMain();
 
     // Prevent loop
     if (incomingHost === targetDomain) {
