@@ -21,7 +21,21 @@
 移植原则：**最薄适配层** —— 只改平台差异（事件入口、地理/IP 来源、平台注入头、
 HTMLRewriter 垫片），不替上游改进功能。每个项目的文件头注释里有逐条差异清单。
 
-其余上游脚本未移植：能力已被上述两个项目覆盖（API 转发 + 网页改写），再移植只增加维护面积。
+## 📋 适配进度
+
+| 上游脚本 | EdgeOne 版 | 状态 | 备注 |
+|---|---|---|---|
+| `viperadnan/booster.js` | [`EdgeOne/llm-relay`](EdgeOne/llm-relay/) | ✅ 已上线 | LLM API 场景，SSE 流式直通 + 多上游映射表 |
+| `OshekharO/beta.js` | [`EdgeOne/OshekharO`](EdgeOne/OshekharO/) | ✅ 已上线 | 通用网页反代，HTMLRewriter 域名改写 |
+| `xiaoyang-sde/index.js` | — | ⬜ 待定 | 最轻量原版，能力 ⊆ OshekharO 版；如需最小参考实现可移植 |
+| `OshekharO/worker.js` | — | ⬜ 暂缓 | beta.js 的前身，功能被 beta 完全覆盖，优先级最低 |
+| `KusakabeSi/worker.js` | — | ⬜ 待定 | 多站点 + 字符串替换；其 CF 邮件混淆解码仅在代理 CF 站点时有用 |
+| `Mikotwa/index.js` | — | ⚠️ 谨慎 | 上游有并发缺陷（模块级全局变量承载请求态），移植前需先修 |
+| `Clansty/proxy.js` | — | ⬜ 待定 | Telegram 频道预览专用，按需移植 |
+| `ymyuuu/worker.js` | — | ⬜ 待定 | 大而全（含 Bootstrap UI），体量最大，可拆 UI 与转发两部分评估 |
+
+状态说明：✅ 已上线 · ⬜ 待定（后续考虑适配）· ⚠️ 有已知问题需先解决 · ⬜ 暂缓（被现有版本覆盖）
+
 如需 Cloudflare 原版用法，见下方上游原文。
 
 ---
