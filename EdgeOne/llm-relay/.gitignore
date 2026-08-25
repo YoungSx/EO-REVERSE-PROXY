@@ -1,0 +1,9 @@
+node_modules/
+package-lock.json
+.edgeone/
+
+# 构建产物。与 EdgeOne/OshekharO 保持一致：
+#   functions/  由 scripts/build.mjs 生成，不入库
+#   middleware.js（项目根）同为产物，但平台约定它必须在根目录，
+#   且与源码 src/middleware.js 同名 —— 入库以免被误认为缺失。
+functions/

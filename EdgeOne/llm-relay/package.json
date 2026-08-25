@@ -1,0 +1,13 @@
+{
+  "name": "eo-llm-relay",
+  "private": true,
+  "type": "module",
+  "description": "LLM API 反向代理 — EdgeOne Pages Edge Function（移植自 Script/viperadnan/booster.js）",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "deploy": "npm run build && edgeone makers deploy . -n eolens -a overseas"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.0"
+  }
+}
