@@ -82,14 +82,19 @@ const PLATFORM_HEADERS = [
   'x-forwarded-proto',
 ];
 
-function buildUpstreamHeaders(request) {
+function buildUpstreamHeaders(request, upstreamHost) {
   const headers = new Headers(request.headers);
 
   for (const h of [...HOP_BY_HOP, ...PLATFORM_HEADERS]) headers.delete(h);
 
-  /* Host 是 fetch 禁改头，运行时按 URL 主机名路由（target 已设为 upstream.host），
-     这里无需也无法设置。Origin/Referer 带着代理域名传上去，某些上游会据此
-     做来源校验而拒绝。 */
+  /*
+    Host 必须显式设为上游主机。按 fetch 规范 Host 属禁改头、应只认 URL，
+    但 EdgeOne 出站网关实测依赖它选路由/SNI —— 缺失时请求直接
+    CLOUD_FUNCTION_INVOCATION_FAILED（平台级 502），而非走到上游。
+    （2026-08-25 实测：删掉此行后所有回源 502，恢复即愈。）
+  */
+  headers.set('Host', upstreamHost);
+  // Origin/Referer 带着代理域名传上去，某些上游会据此做来源校验而拒绝
   headers.delete('origin');
   headers.delete('referer');
 
@@ -135,7 +140,7 @@ async function forward(request, eo) {
 
   const upstreamRequest = new Request(target, {
     method,
-    headers: buildUpstreamHeaders(request),
+    headers: buildUpstreamHeaders(request, upstream.host),
     body,
     redirect: 'manual',
   });
