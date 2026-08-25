@@ -1,14 +1,26 @@
 /*
    EO-REVERSE-PROXY — EdgeOne Pages Edge Functions 版
-   移植自 Script/OshekharO/beta.js (Cloudflare Workers)
+   移植自 Script/OshekharO/beta.js (Cloudflare Workers)。
 
-   与 CF 原版的差异全部标了 [EO]，除此之外逐字未改。
-   共 3 处：
-     1. 事件入口     addEventListener('fetch') → export onRequest(context)
-     2. 地理/IP 来源  cf-ipcountry / cf-connecting-ip → context.request.eo
-     3. 回源头清理    cf-* → eo-* / cdn-loop
-   HTMLRewriter 相关的 4 个 handler 类与 createHTMLRewriter 零改动，
-   靠 ./htmlrewriter.js 提供的同名全局实现（lol-html WASM，语义与 CF 一致）。
+   定位：最薄的 EdgeOne 适配层 —— 只做平台差异，不替上游改进功能。
+   与 CF 原版的差异全部标了 [EO]，除此之外逻辑逐字未改：
+
+   平台适配（不改就跑不起来）：
+     1. 事件入口     addEventListener('fetch') → handleRequest 导出，双入口共用
+     2. 地理/IP 来源  cf-ipcountry / cf-connecting-ip → request.eo
+     3. 回源头清理    cf-* → eo-* / cdn-loop 系列
+     4. HTMLRewriter  平台无此 API，靠 ./htmlrewriter.js 垫片提供同名全局
+                     （lol-html WASM，语义与 CF 一致）
+     5. TextRewriter  lol-html 按 1024 字节切分文本节点（CF 原生按整节点回调），
+                     原版「攒到末尾再 replace」在此会丢全文，改为逐块替换
+     6. 编码头剥离    改写正文前剥 content-encoding/length（见对应位置注释）
+
+   配置语义补全：
+     7. targetMain/use_www  目标站主域不再强制加 www（HN 无 www 子域，
+                           硬编码会导致回源解析失败挂到超时）
+     8. injection_script    为空时跳过注入分支直接流出，避免无谓的全页缓冲
+
+   其余 handler 类（AttributeRewriter 等 4 个）与上游零改动。
 */
 
 // [EO] 引入 HTMLRewriter 垫片：把 HTMLRewriter 挂到 globalThis，下方代码无需感知
@@ -190,7 +202,7 @@ async function fetchAndApply(request) {
 
 async function createModifiedRequest(originalRequest, targetUrl, targetDomain, incomingHost) {
   const headers = new Headers(originalRequest.headers);
-  headers.set('Host', targetDomain);
+  // Host 是 fetch 禁改头，运行时按 URL 主机名路由；上游原版这行是死代码，保留 diff 干净故不照搬
   headers.set('Referer', `${targetUrl.protocol}//${targetDomain}`);
   // [EO] 清理平台注入头：CF 为 cf-connecting-ip / cf-ipcountry / cf-ray
   headers.delete('eo-connecting-ip');
@@ -420,19 +432,6 @@ function createHTMLRewriter(incomingHost) {
     .on('style', new TextRewriter(incomingHost));
 }
 
-// [EO] 判定「必须逐块下发、不能缓冲」的响应类型。
-// 依据是传输语义而非文本/二进制之分：这些格式的价值在于「边产边发」，
-// 一旦缓冲，语义就被破坏。
-function isStreamingContentType(contentType) {
-  const ct = contentType.toLowerCase();
-  return (
-    ct.includes('text/event-stream') ||   // SSE：OpenAI / Claude / Gemini 流式对话
-    ct.includes('application/x-ndjson') ||// NDJSON：Ollama 等逐行 JSON 流
-    ct.includes('application/stream+json') ||
-    ct.includes('multipart/x-mixed-replace')
-  );
-}
-
 async function processResponse(originalResponse, targetDomain, incomingHost) {
   const headers = new Headers(originalResponse.headers);
 
@@ -487,24 +486,6 @@ async function processResponse(originalResponse, targetDomain, incomingHost) {
   }
 
   const contentType = headers.get('content-type') || '';
-
-  // [EO] 流式协议直通，必须排在下方文本分支之前。
-  //
-  // 为什么需要：SSE 的 Content-Type 是 text/event-stream，含 "text/"，
-  // 会命中下方 `contentType.includes('text/')` 的全缓冲分支
-  // （await originalResponse.text()）—— 那会一直读到上游关闭连接才输出，
-  // LLM 对话的逐字效果彻底消失，长回答还会撞上平台函数执行上限。
-  //
-  // 直通即不改写域名。对 SSE/NDJSON 而言这是正确取舍：其载荷是
-  // 逐帧下发的 JSON 片段，按块做正则替换本就不可靠（关键词会被切断），
-  // 而这类接口返回的是模型文本而非站内链接，无改写需求。
-  if (isStreamingContentType(contentType)) {
-    return new Response(originalResponse.body, {
-      status: originalResponse.status,
-      statusText: originalResponse.statusText,
-      headers
-    });
-  }
 
   // Use HTMLRewriter for HTML content (streaming, more efficient)
   if (contentType.includes('text/html')) {

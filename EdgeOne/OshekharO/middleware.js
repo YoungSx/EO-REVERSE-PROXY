@@ -1108,7 +1108,6 @@ async function fetchAndApply(request) {
 }
 async function createModifiedRequest(originalRequest, targetUrl, targetDomain, incomingHost) {
   const headers = new Headers(originalRequest.headers);
-  headers.set("Host", targetDomain);
   headers.set("Referer", `${targetUrl.protocol}//${targetDomain}`);
   headers.delete("eo-connecting-ip");
   headers.delete("eo-is-mainland");
@@ -1258,12 +1257,6 @@ function rewriteTextContent(text, incomingHost) {
 function createHTMLRewriter(incomingHost) {
   return new HTMLRewriter().on("a", new AttributeRewriter("href", incomingHost)).on("link", new AttributeRewriter("href", incomingHost)).on("img", new MultiAttributeRewriter(["src", "data-src", "srcset"], incomingHost)).on("video", new MultiAttributeRewriter(["src", "poster"], incomingHost)).on("audio", new AttributeRewriter("src", incomingHost)).on("source", new MultiAttributeRewriter(["src", "srcset"], incomingHost)).on("script", new AttributeRewriter("src", incomingHost)).on("iframe", new AttributeRewriter("src", incomingHost)).on("form", new AttributeRewriter("action", incomingHost)).on("meta", new MetaRewriter(incomingHost)).on("*", new MultiAttributeRewriter(["data-url", "data-href"], incomingHost)).on("script", new TextRewriter(incomingHost)).on("style", new TextRewriter(incomingHost));
 }
-function isStreamingContentType(contentType) {
-  const ct = contentType.toLowerCase();
-  return ct.includes("text/event-stream") || // SSE：OpenAI / Claude / Gemini 流式对话
-  ct.includes("application/x-ndjson") || // NDJSON：Ollama 等逐行 JSON 流
-  ct.includes("application/stream+json") || ct.includes("multipart/x-mixed-replace");
-}
 async function processResponse(originalResponse, targetDomain, incomingHost) {
   const headers = new Headers(originalResponse.headers);
   if (config.disable_cache) {
@@ -1308,13 +1301,6 @@ async function processResponse(originalResponse, targetDomain, incomingHost) {
     }
   }
   const contentType = headers.get("content-type") || "";
-  if (isStreamingContentType(contentType)) {
-    return new Response(originalResponse.body, {
-      status: originalResponse.status,
-      statusText: originalResponse.statusText,
-      headers
-    });
-  }
   if (contentType.includes("text/html")) {
     headers.delete("content-encoding");
     headers.delete("content-length");

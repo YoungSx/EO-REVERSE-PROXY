@@ -1,11 +1,31 @@
-# CF-REVERSE-PROXY
+# EO-REVERSE-PROXY
 
-> A collection of lightweight, serverless **Reverse Proxy** scripts for [Cloudflare Workers](https://workers.cloudflare.com/) — no servers, no VMs, no Nginx required.
+> [OshekharO/CF-REVERSE-PROXY](https://github.com/OshekharO/CF-REVERSE-PROXY) 的 fork —— 将其中的反向代理脚本适配到**腾讯云 EdgeOne Pages**（Edge Functions）。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Cloudflare%20Workers-orange)](https://workers.cloudflare.com/)
+[![Platform](https://img.shields.io/badge/platform-%E8%85%BE%E8%AE%AF%E4%BA%91%20EdgeOne%20Pages-blue)](https://edgeone.cloud.tencent.com/pages)
+[![Upstream](https://img.shields.io/badge/upstream-CF--REVERSE--PROXY-orange)](https://github.com/OshekharO/CF-REVERSE-PROXY)
 
 ---
+
+## 📖 本仓库是什么
+
+`Script/` 目录是**原封未动的上游内容**（Cloudflare Workers 脚本及其文档，仅作参考与追溯）；
+`EdgeOne/` 目录是本仓库的产出 —— **移植到腾讯 EdgeOne Pages 的版本**：
+
+| 项目 | 移植自 | 场景 | 状态 |
+|---|---|---|---|
+| [`EdgeOne/llm-relay`](EdgeOne/llm-relay/) | `Script/viperadnan/booster.js` | LLM API 反代（SSE 流式直通、多上游映射表、CORS） | ✅ 已上线 |
+| [`EdgeOne/OshekharO`](EdgeOne/OshekharO/) | `Script/OshekharO/beta.js` | 通用网页反代（HTMLRewriter 域名改写） | ✅ 已上线 |
+
+移植原则：**最薄适配层** —— 只改平台差异（事件入口、地理/IP 来源、平台注入头、
+HTMLRewriter 垫片），不替上游改进功能。每个项目的文件头注释里有逐条差异清单。
+
+其余上游脚本未移植：能力已被上述两个项目覆盖（API 转发 + 网页改写），再移植只增加维护面积。
+如需 Cloudflare 原版用法，见下方上游原文。
+
+---
+
 
 ## 📖 Overview
 
@@ -34,8 +54,11 @@
 ## 📂 Repository Structure
 
 ```
-CF-REVERSE-PROXY/
-└── Script/
+EO-REVERSE-PROXY/
+├── EdgeOne/            # 本仓库产出：腾讯 EdgeOne Pages 适配版
+│   ├── llm-relay/      # LLM API 反代（移植自 viperadnan/booster.js）
+│   └── OshekharO/      # 网页反代（移植自 OshekharO/beta.js）
+└── Script/             # 上游原封内容（Cloudflare Workers 脚本，仅供参考）
     ├── xiaoyang-sde/   # Original lightweight reverse proxy
     ├── viperadnan/     # Booster — speed, caching, firewall, and route optimizations
     ├── KusakabeSi/     # Multi-site proxy with string replacement & ad removal
@@ -47,7 +70,27 @@ CF-REVERSE-PROXY/
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start（EdgeOne Pages 版）
+
+以 `llm-relay` 为例（`OshekharO` 同理）：
+
+```bash
+cd EdgeOne/llm-relay
+npm install
+npm run deploy   # 构建 + edgeone makers deploy 到 *.edgeone.dev 预设域名
+```
+
+前置条件：安装 [EdgeOne CLI](https://edgeone.cloud.tencent.com/pages/document) 并登录
+（`edgeone login`）。`-a overseas` 表示部署在不含中国大陆的区域，绑定自定义域名无需备案。
+
+---
+
+以下为上游原文（Cloudflare Workers 用法）。
+
+
+---
+
+## 🚀 Quick Start（上游原文 · Cloudflare Workers）
 
 ### 1. Open Cloudflare Workers
 

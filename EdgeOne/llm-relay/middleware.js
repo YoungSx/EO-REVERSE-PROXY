@@ -142,10 +142,9 @@ var PLATFORM_HEADERS = [
   "cdn-loop",
   "x-forwarded-proto"
 ];
-function buildUpstreamHeaders(request, upstreamHost) {
+function buildUpstreamHeaders(request) {
   const headers = new Headers(request.headers);
   for (const h of [...HOP_BY_HOP, ...PLATFORM_HEADERS]) headers.delete(h);
-  headers.set("Host", upstreamHost);
   headers.delete("origin");
   headers.delete("referer");
   if (config.injectAuth.enabled && config.injectAuth.apiKey) {
@@ -175,7 +174,7 @@ async function forward(request, eo) {
   const body = hasBody ? await request.arrayBuffer() : null;
   const upstreamRequest = new Request(target, {
     method,
-    headers: buildUpstreamHeaders(request, upstream.host),
+    headers: buildUpstreamHeaders(request),
     body,
     redirect: "manual"
   });

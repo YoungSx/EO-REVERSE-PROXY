@@ -7,22 +7,30 @@
   改写。其余脚本都会对 json/text/html 调 await text()，那会把 SSE 流
   整段攥住直到上游说完最后一个字 —— LLM 的逐字输出就没了。
 
+  定位：最薄的 EdgeOne 适配层 + 为 API 场景做的必要加固。
+
   与上游 booster.js 的差异，逐条：
 
-    1. 事件入口     addEventListener('fetch') → export onRequest(context)
-    2. 地理与 IP     cf-ipcountry / cf-connecting-ip → context.request.eo
+  平台适配（不改就跑不起来）：
+    1. 事件入口     addEventListener('fetch') → onRequest(context)，
+                    双入口（[[default]] 路由 + 根路径 middleware）共用
+    2. 地理与 IP     cf-ipcountry / cf-connecting-ip → request.eo
     3. 删 cf 选项    cacheEverything / mirage / polish / minify / scrapeShield
                     全是 Cloudflare 专有字段，EdgeOne 不认，留着是死配置
+
+  场景适配（LLM API 反代所需）：
     4. 请求体        await request.text() → arrayBuffer()
                     text() 会按 UTF-8 解码，二进制体（音频转写、图片理解）
                     会被破坏
     5. 防火墙        上游默认 blockedRegion: ['CN', ...] —— 中国大陆在黑名单
                     第一位，原样搬过来自己先被 403。改为默认空
-    6. 移动端分流    isMobile / mobileRedirect 删掉，API 场景无意义
-    7. x-pjax-url    删掉，那是网页局部刷新用的头，API 不会有
-    8. 新增 CORS     浏览器端带 Authorization 调 API 时 '*' 非法，须回显 origin
-    9. 新增流式白名单 明确标出 SSE/NDJSON 直通，防止后续有人加分支时踩坑
-   10. 新增鉴权注入   可选：由边缘补 Authorization，密钥不下发到浏览器
+    6. 新增 CORS     浏览器端带 Authorization 调 API 时 '*' 非法，须回显 origin；
+                    错误响应同样回显，否则浏览器只看到网络错误而非真实状态码
+    7. 前缀路由      多上游映射表（PROVIDERS），值支持 '主机/路径基座'；
+                    登记未配置的前缀显式 503，绝不静默改道默认上游
+
+  删除项（API 场景无意义的上游功能）：
+    8. 移动端分流 isMobile/mobileRedirect；x-pjax-url 头
 */
 
 import { config, resolveUpstream } from './config.js';
@@ -74,14 +82,14 @@ const PLATFORM_HEADERS = [
   'x-forwarded-proto',
 ];
 
-function buildUpstreamHeaders(request, upstreamHost) {
+function buildUpstreamHeaders(request) {
   const headers = new Headers(request.headers);
 
   for (const h of [...HOP_BY_HOP, ...PLATFORM_HEADERS]) headers.delete(h);
 
-  // Host 必须换成上游，否则上游按原 Host 路由会 404 或证书不匹配
-  headers.set('Host', upstreamHost);
-  // Origin/Referer 带着代理域名传上去，某些上游会据此做来源校验而拒绝
+  /* Host 是 fetch 禁改头，运行时按 URL 主机名路由（target 已设为 upstream.host），
+     这里无需也无法设置。Origin/Referer 带着代理域名传上去，某些上游会据此
+     做来源校验而拒绝。 */
   headers.delete('origin');
   headers.delete('referer');
 
@@ -127,7 +135,7 @@ async function forward(request, eo) {
 
   const upstreamRequest = new Request(target, {
     method,
-    headers: buildUpstreamHeaders(request, upstream.host),
+    headers: buildUpstreamHeaders(request),
     body,
     redirect: 'manual',
   });
