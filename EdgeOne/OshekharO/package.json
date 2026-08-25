@@ -1,0 +1,18 @@
+{
+  "name": "eo-reverse-proxy-oshekharo",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "EdgeOne Pages Edge Function port of CF-REVERSE-PROXY/OshekharO/beta.js",
+  "scripts": {
+    "prebuild": "node scripts/gen-wasm.mjs",
+    "build": "node scripts/build.mjs",
+    "deploy": "npm run build && edgeone pages deploy . -n eo-reverse-proxy"
+  },
+  "dependencies": {
+    "htmlrewriter": "0.0.5"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
