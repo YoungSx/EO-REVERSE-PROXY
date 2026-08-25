@@ -20,28 +20,32 @@ export const PROVIDERS = {
   groq: 'api.groq.com',
   deepseek: 'api.deepseek.com',
   openrouter: 'openrouter.ai',
-  ollama: null, // 占位：自建 Ollama 需填你自己的公网地址
+  ollama: null, // 已登记前缀但未配置。自建 Ollama 填公网地址即可启用；
+                // 未填时请求 /ollama/* 会得到显式 503，而非静默转给默认上游
 };
 
 export const DEFAULT_PROVIDER = 'openai';
 
 /**
  * 由请求路径解析上游主机与回源路径。
- * @returns {{host: string, rewritePath: (p: string) => string} | null}
+ * 命中已知前缀但该上游未配置（host 为空）时返回 { host: null } ——
+ * 调用方必须显式报错，绝不能静默改道默认上游：用户写 /ollama/* 是明确的
+ * 意图表达，悄悄转给 OpenAI 只会让对方收到一头雾水的 404。
+ * @returns {{host: string | null, rewritePath: (p: string) => string} | null}
  */
 export function resolveUpstream(pathname) {
   const seg = pathname.split('/')[1] || '';
   const host = PROVIDERS[seg];
 
   // 命中前缀：剥掉前缀段再回源（/openai/v1/x → /v1/x）
-  if (host) {
+  if (seg in PROVIDERS) {
     return {
       host,
       rewritePath: (p) => p.slice(seg.length + 1) || '/',
     };
   }
 
-  // 未命中：走默认上游，路径原样透传
+  // 未命中任何前缀：走默认上游，路径原样透传
   const fallback = PROVIDERS[DEFAULT_PROVIDER];
   if (!fallback) return null;
   return { host: fallback, rewritePath: (p) => p };
@@ -79,5 +83,6 @@ export const config = {
   upstreamTimeoutMs: 30000,
 
   // 是否在响应中附带 x-relay-* 调试头（上游主机、耗时、节点地区）。
-  debugHeaders: true,
+  // 仅排查问题时临时打开；x-relay-pop 会把调用者国家暴露给任意网页。
+  debugHeaders: false,
 };

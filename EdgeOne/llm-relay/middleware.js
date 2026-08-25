@@ -7,13 +7,14 @@ var PROVIDERS = {
   deepseek: "api.deepseek.com",
   openrouter: "openrouter.ai",
   ollama: null
-  // 占位：自建 Ollama 需填你自己的公网地址
+  // 已登记前缀但未配置。自建 Ollama 填公网地址即可启用；
+  // 未填时请求 /ollama/* 会得到显式 503，而非静默转给默认上游
 };
 var DEFAULT_PROVIDER = "openai";
 function resolveUpstream(pathname) {
   const seg = pathname.split("/")[1] || "";
   const host = PROVIDERS[seg];
-  if (host) {
+  if (seg in PROVIDERS) {
     return {
       host,
       rewritePath: (p) => p.slice(seg.length + 1) || "/"
@@ -52,7 +53,8 @@ var config = {
   // 因此长对话不会被它掐断。
   upstreamTimeoutMs: 3e4,
   // 是否在响应中附带 x-relay-* 调试头（上游主机、耗时、节点地区）。
-  debugHeaders: true
+  // 仅排查问题时临时打开；x-relay-pop 会把调用者国家暴露给任意网页。
+  debugHeaders: false
 };
 
 // src/cors.js
@@ -145,7 +147,10 @@ async function forward(request, eo) {
   const url = new URL(request.url);
   const upstream = resolveUpstream(url.pathname);
   if (!upstream) {
-    return jsonError(404, "no_upstream", `No upstream configured for path: ${url.pathname}`);
+    return jsonError(404, "no_upstream", `No upstream configured for path: ${url.pathname}`, request.headers.get("origin"));
+  }
+  if (!upstream.host) {
+    return jsonError(503, "upstream_unconfigured", `Upstream "${new URL(request.url).pathname.split("/")[1]}" is known but not configured`, request.headers.get("origin"));
   }
   const target = new URL(url);
   target.protocol = "https:";
@@ -153,7 +158,7 @@ async function forward(request, eo) {
   target.port = "";
   target.pathname = upstream.rewritePath(url.pathname);
   if (target.host === url.host) {
-    return jsonError(508, "loop_detected", "Upstream resolves to this proxy itself");
+    return jsonError(508, "loop_detected", "Upstream resolves to this proxy itself", request.headers.get("origin"));
   }
   const method = request.method;
   const hasBody = method !== "GET" && method !== "HEAD";
@@ -176,7 +181,8 @@ async function forward(request, eo) {
     return jsonError(
       aborted ? 504 : 502,
       aborted ? "upstream_timeout" : "upstream_unreachable",
-      aborted ? `Upstream did not respond within ${config.upstreamTimeoutMs}ms` : `Failed to reach ${upstream.host}`
+      aborted ? `Upstream did not respond within ${config.upstreamTimeoutMs}ms` : `Failed to reach ${upstream.host}`,
+      request.headers.get("origin")
     );
   }
   clearTimeout(timer);
@@ -198,14 +204,10 @@ async function forward(request, eo) {
     headers
   });
 }
-function jsonError(status, code, message) {
-  return new Response(JSON.stringify({ error: { code, message } }), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "access-control-allow-origin": "*"
-    }
-  });
+function jsonError(status, code, message, requestOrigin) {
+  const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
+  applyCors(headers, requestOrigin);
+  return new Response(JSON.stringify({ error: { code, message } }), { status, headers });
 }
 async function handleRequest(request) {
   if (request.method === "OPTIONS") return handlePreflight(request);
@@ -213,19 +215,19 @@ async function handleRequest(request) {
   if (config.blockedRegions.length > 0) {
     const region = eo.geo && eo.geo.countryCodeAlpha2;
     if (region && config.blockedRegions.includes(region.toUpperCase())) {
-      return jsonError(403, "region_blocked", "Not available in your region");
+      return jsonError(403, "region_blocked", "Not available in your region", request.headers.get("origin"));
     }
   }
   if (config.blockedIps.length > 0 && eo.clientIp) {
     if (config.blockedIps.includes(eo.clientIp)) {
-      return jsonError(403, "ip_blocked", "Your IP is blocked");
+      return jsonError(403, "ip_blocked", "Your IP is blocked", request.headers.get("origin"));
     }
   }
   try {
     return await forward(request, eo);
   } catch (err) {
     console.error("relay error:", err && err.stack ? err.stack : err);
-    return jsonError(500, "internal_error", "Proxy encountered an internal error");
+    return jsonError(500, "internal_error", "Proxy encountered an internal error", request.headers.get("origin"));
   }
 }
 

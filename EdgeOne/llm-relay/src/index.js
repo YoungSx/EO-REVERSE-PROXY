@@ -98,7 +98,11 @@ async function forward(request, eo) {
   const upstream = resolveUpstream(url.pathname);
 
   if (!upstream) {
-    return jsonError(404, 'no_upstream', `No upstream configured for path: ${url.pathname}`);
+    return jsonError(404, 'no_upstream', `No upstream configured for path: ${url.pathname}`, request.headers.get('origin'));
+  }
+  if (!upstream.host) {
+    // 已知前缀但未配置上游地址（如自建 Ollama 未填公网地址）
+    return jsonError(503, 'upstream_unconfigured', `Upstream "${new URL(request.url).pathname.split('/')[1]}" is known but not configured`, request.headers.get('origin'));
   }
 
   const target = new URL(url);
@@ -109,7 +113,7 @@ async function forward(request, eo) {
 
   // 防自环：上游被配成了代理自己
   if (target.host === url.host) {
-    return jsonError(508, 'loop_detected', 'Upstream resolves to this proxy itself');
+    return jsonError(508, 'loop_detected', 'Upstream resolves to this proxy itself', request.headers.get('origin'));
   }
 
   /*
@@ -149,6 +153,7 @@ async function forward(request, eo) {
       aborted
         ? `Upstream did not respond within ${config.upstreamTimeoutMs}ms`
         : `Failed to reach ${upstream.host}`,
+      request.headers.get('origin'),
     );
   }
   clearTimeout(timer);
@@ -182,14 +187,12 @@ async function forward(request, eo) {
   });
 }
 
-function jsonError(status, code, message) {
-  return new Response(JSON.stringify({ error: { code, message } }), {
-    status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'access-control-allow-origin': '*',
-    },
-  });
+/* 错误响应同样要走 CORS 回显 —— 否则浏览器里带 Authorization 的调用
+   收到的是被 CORS 拦截的网络错误，而不是真实的 404/504 状态码。 */
+function jsonError(status, code, message, requestOrigin) {
+  const headers = new Headers({ 'content-type': 'application/json; charset=utf-8' });
+  applyCors(headers, requestOrigin);
+  return new Response(JSON.stringify({ error: { code, message } }), { status, headers });
 }
 
 /* 统一入口：Edge Function 与根路径中间件共用 */
@@ -201,13 +204,13 @@ export async function handleRequest(request) {
   if (config.blockedRegions.length > 0) {
     const region = eo.geo && eo.geo.countryCodeAlpha2;
     if (region && config.blockedRegions.includes(region.toUpperCase())) {
-      return jsonError(403, 'region_blocked', 'Not available in your region');
+      return jsonError(403, 'region_blocked', 'Not available in your region', request.headers.get('origin'));
     }
   }
 
   if (config.blockedIps.length > 0 && eo.clientIp) {
     if (config.blockedIps.includes(eo.clientIp)) {
-      return jsonError(403, 'ip_blocked', 'Your IP is blocked');
+      return jsonError(403, 'ip_blocked', 'Your IP is blocked', request.headers.get('origin'));
     }
   }
 
@@ -215,6 +218,6 @@ export async function handleRequest(request) {
     return await forward(request, eo);
   } catch (err) {
     console.error('relay error:', err && err.stack ? err.stack : err);
-    return jsonError(500, 'internal_error', 'Proxy encountered an internal error');
+    return jsonError(500, 'internal_error', 'Proxy encountered an internal error', request.headers.get('origin'));
   }
 }
