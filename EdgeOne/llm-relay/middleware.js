@@ -12,17 +12,27 @@ var PROVIDERS = {
 };
 var DEFAULT_PROVIDER = "openai";
 function resolveUpstream(pathname) {
+  const splitEntry = (entry) => {
+    const slash = entry.indexOf("/");
+    return slash === -1 ? { host: entry, base: "" } : { host: entry.slice(0, slash), base: entry.slice(slash) };
+  };
   const seg = pathname.split("/")[1] || "";
-  const host = PROVIDERS[seg];
   if (seg in PROVIDERS) {
+    const entry = PROVIDERS[seg];
+    if (!entry) return { host: null, rewritePath: (p) => p };
+    const { host: host2, base: base2 } = splitEntry(entry);
     return {
-      host,
-      rewritePath: (p) => p.slice(seg.length + 1) || "/"
+      host: host2,
+      rewritePath: (p) => base2 + p.slice(seg.length + 1)
     };
   }
   const fallback = PROVIDERS[DEFAULT_PROVIDER];
   if (!fallback) return null;
-  return { host: fallback, rewritePath: (p) => p };
+  const { host, base } = splitEntry(fallback);
+  return {
+    host,
+    rewritePath: (p) => base + p
+  };
 }
 var config = {
   // 允许携带凭证的来源。'*' 仅在无凭证请求下合法，因此这里按 origin 精确回显，

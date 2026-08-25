@@ -3,7 +3,7 @@
 */
 
 /*
-  上游供应商表。
+  上游供应商表 —— 前缀 → 上游主机 的映射。
 
   按请求路径的第一段选前缀，一个部署同时代理多家：
     /openai/v1/chat/completions  → api.openai.com/v1/chat/completions
@@ -12,6 +12,14 @@
   路径不带已知前缀时落到 DEFAULT_PROVIDER，于是也兼容「整个部署只代理一家」
   的裸路径用法：/v1/chat/completions → api.openai.com/v1/chat/completions。
   这样各家官方 SDK 只改 baseURL 就能用，不必改路径。
+
+  扩展规则（加任意多对映射只动这张表）：
+    - 新增一行即新增一条「前缀 → 上游」映射，转发逻辑零改动
+    - 值填 null = 登记前缀但暂不配置：请求会得到显式 503，
+      绝不会静默改道默认上游（用户的前缀是明确的意图表达）
+    - 值可带路径基座，如 'api.example.com/openai-compatible'：
+      回源时会拼在前缀之后（见 resolveUpstream）
+    - DEFAULT_PROVIDER 必须指向表中已配置的键，否则裸路径用法返回 404
 */
 export const PROVIDERS = {
   openai: 'api.openai.com',
@@ -31,24 +39,42 @@ export const DEFAULT_PROVIDER = 'openai';
  * 命中已知前缀但该上游未配置（host 为空）时返回 { host: null } ——
  * 调用方必须显式报错，绝不能静默改道默认上游：用户写 /ollama/* 是明确的
  * 意图表达，悄悄转给 OpenAI 只会让对方收到一头雾水的 404。
+ *
+ * 上游值支持路径基座：'api.example.com/v1' 表示该上游所有接口都挂在
+ * /v1 下。命中时回源路径 = 基座 + 前缀后的剩余路径：
+ *   /myai/chat/completions → api.example.com/v1/chat/completions
  * @returns {{host: string | null, rewritePath: (p: string) => string} | null}
  */
 export function resolveUpstream(pathname) {
-  const seg = pathname.split('/')[1] || '';
-  const host = PROVIDERS[seg];
+  /* 'host/base' → { host, base }；纯 'host' → base 为 '' */
+  const splitEntry = (entry) => {
+    const slash = entry.indexOf('/');
+    return slash === -1
+      ? { host: entry, base: '' }
+      : { host: entry.slice(0, slash), base: entry.slice(slash) };
+  };
 
-  // 命中前缀：剥掉前缀段再回源（/openai/v1/x → /v1/x）
+  const seg = pathname.split('/')[1] || '';
+
+  // 命中前缀：回源路径 = 基座 + 去前缀的剩余（/openai/v1/x → /v1/x）
   if (seg in PROVIDERS) {
+    const entry = PROVIDERS[seg];
+    if (!entry) return { host: null, rewritePath: (p) => p };
+    const { host, base } = splitEntry(entry);
     return {
       host,
-      rewritePath: (p) => p.slice(seg.length + 1) || '/',
+      rewritePath: (p) => base + p.slice(seg.length + 1),
     };
   }
 
-  // 未命中任何前缀：走默认上游，路径原样透传
+  // 未命中任何前缀：走默认上游，路径原样透传（基座照加）
   const fallback = PROVIDERS[DEFAULT_PROVIDER];
   if (!fallback) return null;
-  return { host: fallback, rewritePath: (p) => p };
+  const { host, base } = splitEntry(fallback);
+  return {
+    host,
+    rewritePath: (p) => base + p,
+  };
 }
 
 export const config = {
